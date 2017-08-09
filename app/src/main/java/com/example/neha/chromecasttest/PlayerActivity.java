@@ -8,8 +8,15 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.support.annotation.NonNull;
+import android.support.v4.view.MenuItemCompat;
+import android.support.v7.app.AppCompatActivity;
+import android.support.v7.app.MediaRouteActionProvider;
+import android.support.v7.media.MediaRouteSelector;
+import android.support.v7.media.MediaRouter;
 import android.text.TextUtils;
 import android.view.KeyEvent;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.view.ViewGroup;
@@ -58,6 +65,10 @@ import com.google.android.exoplayer2.upstream.DataSource;
 import com.google.android.exoplayer2.upstream.DefaultBandwidthMeter;
 import com.google.android.exoplayer2.upstream.HttpDataSource;
 import com.google.android.exoplayer2.util.Util;
+import com.google.android.gms.cast.CastDevice;
+import com.google.android.gms.cast.CastMediaControlIntent;
+import com.google.android.gms.common.api.GoogleApiClient;
+
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.net.CookieHandler;
@@ -68,7 +79,7 @@ import java.util.UUID;
 /**
  * An activity that plays media using {@link SimpleExoPlayer}.
  */
-public class PlayerActivity extends Activity implements OnClickListener, EventListener,
+public class PlayerActivity extends AppCompatActivity implements OnClickListener, EventListener,
         PlaybackControlView.VisibilityListener {
 
     public static final String DRM_SCHEME_UUID_EXTRA = "drm_scheme_uuid";
@@ -111,17 +122,53 @@ public class PlayerActivity extends Activity implements OnClickListener, EventLi
     private int resumeWindow;
     private long resumePosition;
 
+
+    private String APP_ID = CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID;
+    private CastDevice selectedDevice;
+    private GoogleApiClient apiClient;
+    private boolean applicationStarted;
+    private static final int REQUEST_GMS_ERROR = 0;
+    public static final String NAMESPACE = "urn:x-cast:com.ls.cast.test";
+
+
     // Fields used only for ad playback. The ads loader is loaded via reflection.
 
     private Object imaAdsLoader; // com.google.android.exoplayer2.ext.ima.ImaAdsLoader
     private Uri loadedAdTagUri;
     private ViewGroup adOverlayViewGroup;
 
+
+    private final MediaRouter.Callback mediaRouterCallback = new MediaRouter.Callback()
+    {
+        @Override
+        public void onRouteSelected(MediaRouter router, MediaRouter.RouteInfo route)
+        {
+            CastDevice device = CastDevice.getFromBundle(route.getExtras());
+            //setSelectedDevice(device);
+        }
+
+        @Override
+        public void onRouteUnselected(MediaRouter router, MediaRouter.RouteInfo route)
+        {
+            //setSelectedDevice(null);
+        }
+    };
+
+    private MediaRouter mediaRouter;
+    private MediaRouteSelector mediaRouteSelector;
+
     // Activity lifecycle
+
+
+
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        mediaRouter = MediaRouter.getInstance(getApplicationContext());
+        mediaRouteSelector = new MediaRouteSelector.Builder().addControlCategory(CastMediaControlIntent.categoryForCast(APP_ID)).build();
+
         shouldAutoPlay = true;
         clearResumePosition();
         mediaDataSourceFactory = buildDataSourceFactory(true);
@@ -143,6 +190,19 @@ public class PlayerActivity extends Activity implements OnClickListener, EventLi
         simpleExoPlayerView.requestFocus();
     }
 
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        super.onCreateOptionsMenu(menu);
+        getMenuInflater().inflate(R.menu.main_menu, menu);
+
+        MenuItem mediaRouteMenuItem = menu.findItem(R.id.media_route_menu_item);
+        MediaRouteActionProvider mediaRouteActionProvider = (MediaRouteActionProvider) MenuItemCompat.getActionProvider(mediaRouteMenuItem);
+        mediaRouteActionProvider.setRouteSelector(mediaRouteSelector);
+
+        return true;
+    }
+    
     @Override
     public void onNewIntent(Intent intent) {
         releasePlayer();
@@ -156,6 +216,8 @@ public class PlayerActivity extends Activity implements OnClickListener, EventLi
         super.onStart();
         if (Util.SDK_INT > 23) {
             initializePlayer();
+            mediaRouter.addCallback(mediaRouteSelector, mediaRouterCallback, MediaRouter.CALLBACK_FLAG_PERFORM_ACTIVE_SCAN);
+
         }
     }
 
@@ -177,6 +239,7 @@ public class PlayerActivity extends Activity implements OnClickListener, EventLi
 
     @Override
     public void onStop() {
+        mediaRouter.removeCallback(mediaRouterCallback);
         super.onStop();
         if (Util.SDK_INT > 23) {
             releasePlayer();
