@@ -21,4 +21,5 @@
     <string name="text">Text</string>
     <string name="retry">Retry</string>
     <string name="sample_list_load_error">sample list loading error</string>
+    <string name="ima_not_loaded">ima not loaded</string>
 </resources>

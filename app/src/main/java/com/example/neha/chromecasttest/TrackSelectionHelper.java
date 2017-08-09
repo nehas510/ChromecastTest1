@@ -21,14 +21,16 @@ import com.google.android.exoplayer2.trackselection.FixedTrackSelection;
 import com.google.android.exoplayer2.trackselection.MappingTrackSelector;
 import com.google.android.exoplayer2.trackselection.RandomTrackSelection;
 import com.google.android.exoplayer2.trackselection.TrackSelection;
+import com.google.android.exoplayer2.trackselection.MappingTrackSelector.MappedTrackInfo;
+import com.google.android.exoplayer2.trackselection.MappingTrackSelector.SelectionOverride;
+
 
 import java.util.Arrays;
 
 /**
  * Created by neha on 8/8/17.
  */
-
-final class TrackSelectionHelper implements View.OnClickListener,
+ final class TrackSelectionHelper implements View.OnClickListener,
         DialogInterface.OnClickListener {
 
     private static final TrackSelection.Factory FIXED_FACTORY = new FixedTrackSelection.Factory();
@@ -37,12 +39,12 @@ final class TrackSelectionHelper implements View.OnClickListener,
     private final MappingTrackSelector selector;
     private final TrackSelection.Factory adaptiveTrackSelectionFactory;
 
-    private MappingTrackSelector.MappedTrackInfo trackInfo;
+    private MappedTrackInfo trackInfo;
     private int rendererIndex;
     private TrackGroupArray trackGroups;
     private boolean[] trackGroupsAdaptive;
     private boolean isDisabled;
-    private MappingTrackSelector.SelectionOverride override;
+    private SelectionOverride override;
 
     private CheckedTextView disableView;
     private CheckedTextView defaultView;
@@ -68,7 +70,7 @@ final class TrackSelectionHelper implements View.OnClickListener,
      * @param trackInfo The current track information.
      * @param rendererIndex The index of the renderer.
      */
-    public void showSelectionDialog(Activity activity, CharSequence title, MappingTrackSelector.MappedTrackInfo trackInfo,
+    public void showSelectionDialog(Activity activity, CharSequence title, MappedTrackInfo trackInfo,
                                     int rendererIndex) {
         this.trackInfo = trackInfo;
         this.rendererIndex = rendererIndex;
@@ -222,7 +224,7 @@ final class TrackSelectionHelper implements View.OnClickListener,
             int trackIndex = tag.second;
             if (!trackGroupsAdaptive[groupIndex] || override == null
                     || override.groupIndex != groupIndex) {
-                override = new MappingTrackSelector.SelectionOverride(FIXED_FACTORY, groupIndex, trackIndex);
+                override = new SelectionOverride(FIXED_FACTORY, groupIndex, trackIndex);
             } else {
                 // The group being modified is adaptive and we already have a non-null override.
                 boolean isEnabled = ((CheckedTextView) view).isChecked();
@@ -251,19 +253,19 @@ final class TrackSelectionHelper implements View.OnClickListener,
     private void setOverride(int group, int[] tracks, boolean enableRandomAdaptation) {
         TrackSelection.Factory factory = tracks.length == 1 ? FIXED_FACTORY
                 : (enableRandomAdaptation ? RANDOM_FACTORY : adaptiveTrackSelectionFactory);
-        override = new MappingTrackSelector.SelectionOverride(factory, group, tracks);
+        override = new SelectionOverride(factory, group, tracks);
     }
 
     // Track array manipulation.
 
-    private static int[] getTracksAdding(MappingTrackSelector.SelectionOverride override, int addedTrack) {
+    private static int[] getTracksAdding(SelectionOverride override, int addedTrack) {
         int[] tracks = override.tracks;
         tracks = Arrays.copyOf(tracks, tracks.length + 1);
         tracks[tracks.length - 1] = addedTrack;
         return tracks;
     }
 
-    private static int[] getTracksRemoving(MappingTrackSelector.SelectionOverride override, int removedTrack) {
+    private static int[] getTracksRemoving(SelectionOverride override, int removedTrack) {
         int[] tracks = new int[override.length - 1];
         int trackCount = 0;
         for (int i = 0; i < tracks.length + 1; i++) {
