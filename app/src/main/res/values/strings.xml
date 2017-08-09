@@ -1,4 +1,24 @@
 <resources>
     <string name="app_name">ChromecastTest</string>
     <string name="title_activity_main">MainActivity</string>
+    <string name="title_activity_player">PlayerActivity</string>
+    <string name="selection_disabled">selection Disabled</string>
+    <string name="selection_default">Default</string>
+    <string name="enable_random_adaptation">random</string>
+    <string name="storage_permission_denied">permission denied</string>
+    <string name="error_drm_unsupported_scheme">error DRM</string>
+    <string name="error_drm_not_supported">DRM not supported</string>
+    <string name="error_drm_unknown">unknown DRM issue</string>
+    <string name="unexpected_intent_action">unexpected action</string>
+    <string name="error_querying_decoders">error querying decoders</string>
+    <string name="error_no_secure_decoder">No Secure decoder</string>
+    <string name="error_no_decoder">No decoder</string>
+    <string name="error_instantiating_decoder">Error instantiating decoder</string>
+    <string name="error_unsupported_video">Video not supported</string>
+    <string name="error_unsupported_audio">Audio not Supported</string>
+    <string name="audio">Audio</string>
+    <string name="video">Video</string>
+    <string name="text">Text</string>
+    <string name="retry">Retry</string>
+    <string name="sample_list_load_error">sample list loading error</string>
 </resources>

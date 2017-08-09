@@ -34,8 +34,15 @@ import com.google.android.exoplayer2.upstream.DataSpec;
 import com.google.android.exoplayer2.upstream.DefaultDataSource;
 import com.google.android.exoplayer2.util.Assertions;
 import com.google.android.exoplayer2.util.Util;
+import com.google.android.gms.cast.Cast;
 import com.google.android.gms.cast.CastDevice;
 import com.google.android.gms.cast.CastMediaControlIntent;
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GooglePlayServicesUtil;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.Result;
+import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.common.api.Status;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -45,11 +52,22 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
+import static com.google.android.gms.cast.framework.media.RemoteMediaClient.NAMESPACE;
+
 public class MainActivity extends AppCompatActivity {
 
     private MediaRouter mediaRouter;
     private MediaRouteSelector mediaRouteSelector;
     private String APP_ID = CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID;
+    private CastDevice selectedDevice;
+    private GoogleApiClient apiClient;
+    private boolean applicationStarted;
+    private static final int REQUEST_GMS_ERROR = 0;
+    public static final String NAMESPACE = "urn:x-cast:com.ls.cast.test";
+
+
+
+
 
     private final MediaRouter.Callback mediaRouterCallback = new MediaRouter.Callback() {
         @Override
@@ -61,6 +79,89 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void onRouteUnselected(MediaRouter router, MediaRouter.RouteInfo route) {
             //setSelectedDevice(null);
+        }
+    };
+
+    private final Cast.Listener castClientListener = new Cast.Listener()
+    {
+        @Override
+        public void onApplicationDisconnected(int statusCode)
+        {
+        }
+
+        @Override
+        public void onVolumeChanged()
+        {
+        }
+    };
+
+    private final GoogleApiClient.ConnectionCallbacks connectionCallback = new GoogleApiClient.ConnectionCallbacks()
+    {
+        @Override
+        public void onConnected(Bundle bundle)
+        {
+            try
+            {
+                Cast.CastApi.launchApplication(apiClient, APP_ID, false).setResultCallback(connectionResultCallback);
+            }
+            catch (Exception e)
+            {
+                Log.e("NEHA", "Failed to launch application", e);
+            }
+        }
+
+        @Override
+        public void onConnectionSuspended(int i)
+        {
+        }
+    };
+
+    private final GoogleApiClient.OnConnectionFailedListener connectionFailedListener = new GoogleApiClient.OnConnectionFailedListener()
+    {
+        @Override
+        public void onConnectionFailed(ConnectionResult connectionResult)
+        {
+            setSelectedDevice(null);
+        }
+    };
+
+
+    private final ResultCallback<Cast.ApplicationConnectionResult> connectionResultCallback = new ResultCallback<Cast.ApplicationConnectionResult>()
+    {
+        @Override
+        public void onResult(Cast.ApplicationConnectionResult result)
+        {
+            Status status = result.getStatus();
+            if (status.isSuccess())
+            {
+                applicationStarted = true;
+
+                try
+                {
+                    Cast.CastApi.setMessageReceivedCallbacks(apiClient, NAMESPACE, incomingMsgHandler);
+                }
+                catch (IOException e)
+                {
+                    Log.e("NEHA", "Exception while creating channel", e);
+                }
+
+               // setSessionStarted(true);
+            }
+            else
+            {
+               // setSessionStarted(false);
+            }
+        }
+    };
+
+
+    public final Cast.MessageReceivedCallback incomingMsgHandler = new Cast.MessageReceivedCallback()
+    {
+        @Override
+        public void onMessageReceived(CastDevice castDevice, String namespace, String message)
+        {
+            Log.d("NEHA", String.format("message namespace: %s message: %s", namespace, message));
+           // txtLog.append(String.format("\nmessage namespace: %s message: %s", namespace, message));
         }
     };
 
@@ -91,14 +192,13 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
             } catch (IOException e) {
-                Toast.makeText(getApplicationContext(), "Error here", Toast.LENGTH_LONG)
+                Toast.makeText(getApplicationContext(), R.string.sample_list_load_error, Toast.LENGTH_LONG)
                         .show();
             }
             uris = new String[uriList.size()];
             uriList.toArray(uris);
             Arrays.sort(uris);
         }
-
         SampleListLoader loaderTask = new SampleListLoader();
         loaderTask.execute(uris);
 
@@ -126,6 +226,118 @@ public class MainActivity extends AppCompatActivity {
         super.onStop();
     }
 
+    @Override
+    protected void onResume()
+    {
+        super.onResume();
+        int errorCode = GooglePlayServicesUtil.isGooglePlayServicesAvailable(this);
+        if (errorCode != ConnectionResult.SUCCESS)
+        {
+            GooglePlayServicesUtil.getErrorDialog(errorCode, this, REQUEST_GMS_ERROR).show();
+        }
+    }
+
+    @Override
+    protected void onPause()
+    {
+        disconnectApiClient();
+        super.onPause();
+    }
+
+    private void setSelectedDevice(CastDevice device)
+    {
+        Log.d("NEHA", "setSelectedDevice: " + device);
+
+        selectedDevice = device;
+
+        if (selectedDevice != null)
+        {
+            try
+            {
+                stopApplication();
+                disconnectApiClient();
+                connectApiClient();
+            }
+            catch (IllegalStateException e)
+            {
+                Log.w("NEHA", "Exception while connecting API client", e);
+                disconnectApiClient();
+            }
+        }
+        else
+        {
+            if (apiClient != null)
+            {
+                disconnectApiClient();
+                mediaRouter.selectRoute(mediaRouter.getDefaultRoute());
+
+            }
+
+            mediaRouter.selectRoute(mediaRouter.getDefaultRoute());
+        }
+    }
+
+    private void connectApiClient()
+    {
+        Cast.CastOptions apiOptions = Cast.CastOptions.builder(selectedDevice, castClientListener).build();
+        apiClient = new GoogleApiClient.Builder(this)
+                .addApi(Cast.API, apiOptions)
+                .addConnectionCallbacks(connectionCallback)
+                .addOnConnectionFailedListener(connectionFailedListener)
+                .build();
+        apiClient.connect();
+    }
+
+    private void disconnectApiClient()
+    {
+        if (apiClient != null)
+        {
+            apiClient.disconnect();
+            apiClient = null;
+        }
+    }
+
+    private void stopApplication()
+    {
+        if (apiClient == null) return;
+
+        if (applicationStarted)
+        {
+            Cast.CastApi.stopApplication(apiClient);
+            applicationStarted = false;
+        }
+    }
+
+    private void sendMessage(String message)
+    {
+        if (apiClient != null)
+        {
+            try
+            {
+                Cast.CastApi.sendMessage(apiClient, NAMESPACE, message)
+                        .setResultCallback(new ResultCallback<Status>()
+                        {
+                            @Override
+                            public void onResult(Status result)
+                            {
+                                if (!result.isSuccess())
+                                {
+                                    Log.e("NEHA", "Sending message failed");
+                                }
+                            }
+                        });
+            }
+            catch (Exception e)
+            {
+                Log.e("NEHA", "Exception while sending message", e);
+            }
+        }
+    }
+    private void setSessionStarted(boolean enabled)
+    {
+       // pingButton.setEnabled(enabled);
+      //  txtStatus.setText(enabled ? "connected" : "disconnected");
+    }
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
@@ -139,9 +351,10 @@ public class MainActivity extends AppCompatActivity {
         return true;
     }
 
+
     private void onSampleGroups(final List<SampleGroup> groups, boolean sawError) {
         if (sawError) {
-            Toast.makeText(getApplicationContext(), "Error here", Toast.LENGTH_LONG)
+            Toast.makeText(getApplicationContext(), R.string.sample_list_load_error, Toast.LENGTH_LONG)
                     .show();
         }
         ExpandableListView sampleList = (ExpandableListView) findViewById(R.id.sample_list);
@@ -150,14 +363,15 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public boolean onChildClick(ExpandableListView parent, View view, int groupPosition,
                                         int childPosition, long id) {
-                   onSampleSelected(groups.get(groupPosition).samples.get(childPosition));
+                onSampleSelected(groups.get(groupPosition).samples.get(childPosition));
                 return true;
             }
         });
     }
 
+
    private void onSampleSelected(Sample sample) {
-       // startActivity(sample.buildIntent(this));
+        startActivity(sample.buildIntent(this));
     }
 
     private final class SampleListLoader extends AsyncTask<String, Void, List<SampleGroup>> {
@@ -238,6 +452,7 @@ public class MainActivity extends AppCompatActivity {
             String[] drmKeyRequestProperties = null;
             boolean preferExtensionDecoders = false;
             ArrayList<UriSample> playlistSamples = null;
+            String adTagUri = null;
 
             reader.beginObject();
             while (reader.hasNext()) {
@@ -287,6 +502,9 @@ public class MainActivity extends AppCompatActivity {
                         }
                         reader.endArray();
                         break;
+                    case "ad_tag_uri":
+                        adTagUri = reader.nextString();
+                        break;
                     default:
                         throw new ParserException("Unsupported attribute name: " + name);
                 }
@@ -296,11 +514,11 @@ public class MainActivity extends AppCompatActivity {
             if (playlistSamples != null) {
                 UriSample[] playlistSamplesArray = playlistSamples.toArray(
                         new UriSample[playlistSamples.size()]);
-                return new UriSample.PlaylistSample(sampleName, drmUuid, drmLicenseUrl, drmKeyRequestProperties,
+                return new PlaylistSample(sampleName, drmUuid, drmLicenseUrl, drmKeyRequestProperties,
                         preferExtensionDecoders, playlistSamplesArray);
             } else {
                 return new UriSample(sampleName, drmUuid, drmLicenseUrl, drmKeyRequestProperties,
-                        preferExtensionDecoders, uri, extension);
+                        preferExtensionDecoders, uri, extension, adTagUri);
             }
         }
 
@@ -369,7 +587,6 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public int getChildrenCount(int groupPosition) {
             return getGroup(groupPosition).samples.size();
-
         }
 
         @Override
@@ -440,7 +657,7 @@ public class MainActivity extends AppCompatActivity {
             this.preferExtensionDecoders = preferExtensionDecoders;
         }
 
-     /*  public Intent buildIntent(Context context) {
+        public Intent buildIntent(Context context) {
             Intent intent = new Intent(context, PlayerActivity.class);
             intent.putExtra(PlayerActivity.PREFER_EXTENSION_DECODERS, preferExtensionDecoders);
             if (drmSchemeUuid != null) {
@@ -449,7 +666,7 @@ public class MainActivity extends AppCompatActivity {
                 intent.putExtra(PlayerActivity.DRM_KEY_REQUEST_PROPERTIES, drmKeyRequestProperties);
             }
             return intent;
-        }*/
+        }
 
     }
 
@@ -457,37 +674,40 @@ public class MainActivity extends AppCompatActivity {
 
         public final String uri;
         public final String extension;
+        public final String adTagUri;
 
         public UriSample(String name, UUID drmSchemeUuid, String drmLicenseUrl,
                          String[] drmKeyRequestProperties, boolean preferExtensionDecoders, String uri,
-                         String extension) {
+                         String extension, String adTagUri) {
             super(name, drmSchemeUuid, drmLicenseUrl, drmKeyRequestProperties, preferExtensionDecoders);
             this.uri = uri;
             this.extension = extension;
+            this.adTagUri = adTagUri;
         }
 
-        /*     @Override
-             public Intent buildIntent(Context context) {
-                 return super.buildIntent(context)
-                         .setData(Uri.parse(uri))
-                         .putExtra(PlayerActivity.EXTENSION_EXTRA, extension)
-                         .setAction(PlayerActivity.ACTION_VIEW);
-             }
+        @Override
+        public Intent buildIntent(Context context) {
+            return super.buildIntent(context)
+                    .setData(Uri.parse(uri))
+                    .putExtra(PlayerActivity.EXTENSION_EXTRA, extension)
+                    .putExtra(PlayerActivity.AD_TAG_URI_EXTRA, adTagUri)
+                    .setAction(PlayerActivity.ACTION_VIEW);
+        }
 
-         }
-     */
-        private static final class PlaylistSample extends Sample {
+    }
 
-            public final UriSample[] children;
+    private static final class PlaylistSample extends Sample {
 
-            public PlaylistSample(String name, UUID drmSchemeUuid, String drmLicenseUrl,
-                                  String[] drmKeyRequestProperties, boolean preferExtensionDecoders,
-                                  UriSample... children) {
-                super(name, drmSchemeUuid, drmLicenseUrl, drmKeyRequestProperties, preferExtensionDecoders);
-                this.children = children;
-            }
+        public final UriSample[] children;
 
-    /*    @Override
+        public PlaylistSample(String name, UUID drmSchemeUuid, String drmLicenseUrl,
+                              String[] drmKeyRequestProperties, boolean preferExtensionDecoders,
+                              UriSample... children) {
+            super(name, drmSchemeUuid, drmLicenseUrl, drmKeyRequestProperties, preferExtensionDecoders);
+            this.children = children;
+        }
+
+        @Override
         public Intent buildIntent(Context context) {
             String[] uris = new String[children.length];
             String[] extensions = new String[children.length];
@@ -499,11 +719,9 @@ public class MainActivity extends AppCompatActivity {
                     .putExtra(PlayerActivity.URI_LIST_EXTRA, uris)
                     .putExtra(PlayerActivity.EXTENSION_LIST_EXTRA, extensions)
                     .setAction(PlayerActivity.ACTION_VIEW_LIST);
-        }*/
-
         }
 
     }
-}
 
+}
 
