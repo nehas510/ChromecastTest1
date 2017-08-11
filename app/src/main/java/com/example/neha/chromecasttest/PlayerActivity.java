@@ -14,6 +14,7 @@ import android.support.v7.app.MediaRouteActionProvider;
 import android.support.v7.media.MediaRouteSelector;
 import android.support.v7.media.MediaRouter;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -65,9 +66,14 @@ import com.google.android.exoplayer2.upstream.DataSource;
 import com.google.android.exoplayer2.upstream.DefaultBandwidthMeter;
 import com.google.android.exoplayer2.upstream.HttpDataSource;
 import com.google.android.exoplayer2.util.Util;
+import com.google.android.gms.cast.Cast;
 import com.google.android.gms.cast.CastDevice;
 import com.google.android.gms.cast.CastMediaControlIntent;
+import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.Result;
+import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.common.api.Status;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
@@ -123,7 +129,7 @@ public class PlayerActivity extends AppCompatActivity implements OnClickListener
     private long resumePosition;
 
 
-    private String APP_ID = CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID;
+    private String APP_ID = "A9BC55DE";
     private CastDevice selectedDevice;
     private GoogleApiClient apiClient;
     private boolean applicationStarted;
@@ -138,19 +144,77 @@ public class PlayerActivity extends AppCompatActivity implements OnClickListener
     private ViewGroup adOverlayViewGroup;
 
 
+
+    private final Cast.Listener castClientListener = new Cast.Listener()
+    {
+        @Override
+        public void onApplicationDisconnected(int statusCode)
+        {
+        }
+
+        @Override
+        public void onVolumeChanged()
+        {
+        }
+    };
+
+    private final GoogleApiClient.ConnectionCallbacks connectionCallback = new GoogleApiClient.ConnectionCallbacks()
+    {
+        @Override
+        public void onConnected(Bundle bundle)
+        {
+            try
+            {
+                Cast.CastApi.launchApplication(apiClient, APP_ID, false).setResultCallback(connectionResultCallback);
+            }
+            catch (Exception e)
+            {
+                Log.e("NEHA", "Failed to launch application", e);
+            }
+        }
+
+        @Override
+        public void onConnectionSuspended(int i)
+        {
+        }
+    };
+
+    private final GoogleApiClient.OnConnectionFailedListener connectionFailedListener = new GoogleApiClient.OnConnectionFailedListener()
+    {
+        @Override
+        public void onConnectionFailed(ConnectionResult connectionResult)
+        {
+            setSelectedDevice(null);
+        }
+    };
+
+    private final ResultCallback connectionResultCallback = new ResultCallback()
+    {
+        @Override
+        public void onResult(@NonNull Result result) {
+
+            Status status = result.getStatus();
+            if (status.isSuccess())
+            {
+                applicationStarted = true;
+            }
+
+        }
+        
+    };
     private final MediaRouter.Callback mediaRouterCallback = new MediaRouter.Callback()
     {
         @Override
         public void onRouteSelected(MediaRouter router, MediaRouter.RouteInfo route)
         {
             CastDevice device = CastDevice.getFromBundle(route.getExtras());
-            //setSelectedDevice(device);
+            setSelectedDevice(device);
         }
 
         @Override
         public void onRouteUnselected(MediaRouter router, MediaRouter.RouteInfo route)
         {
-            //setSelectedDevice(null);
+            setSelectedDevice(null);
         }
     };
 
@@ -160,7 +224,67 @@ public class PlayerActivity extends AppCompatActivity implements OnClickListener
     // Activity lifecycle
 
 
+    private void setSelectedDevice(CastDevice device)
+    {
+        Log.d("NEHA", "setSelectedDevice: " + device);
 
+        selectedDevice = device;
+
+        if (selectedDevice != null)
+        {
+            try
+            {
+                stopApplication();
+                disconnectApiClient();
+                connectApiClient();
+            }
+            catch (IllegalStateException e)
+            {
+                Log.w("NEHA", "Exception while connecting API client", e);
+                disconnectApiClient();
+            }
+        }
+        else
+        {
+            if (apiClient != null)
+            {
+                disconnectApiClient();
+            }
+
+            mediaRouter.selectRoute(mediaRouter.getDefaultRoute());
+        }
+    }
+
+    private void connectApiClient()
+    {
+        Cast.CastOptions apiOptions = Cast.CastOptions.builder(selectedDevice, castClientListener).build();
+        apiClient = new GoogleApiClient.Builder(this)
+                .addApi(Cast.API, apiOptions)
+                .addConnectionCallbacks(connectionCallback)
+                .addOnConnectionFailedListener(connectionFailedListener)
+                .build();
+        apiClient.connect();
+    }
+
+    private void disconnectApiClient()
+    {
+        if (apiClient != null)
+        {
+            apiClient.disconnect();
+            apiClient = null;
+        }
+    }
+
+    private void stopApplication()
+    {
+        if (apiClient == null) return;
+
+        if (applicationStarted)
+        {
+            Cast.CastApi.stopApplication(apiClient);
+            applicationStarted = false;
+        }
+    }
 
     @Override
     public void onCreate(Bundle savedInstanceState) {

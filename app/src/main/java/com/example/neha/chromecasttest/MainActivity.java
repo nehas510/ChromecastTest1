@@ -58,7 +58,7 @@ public class MainActivity extends AppCompatActivity {
 
     private MediaRouter mediaRouter;
     private MediaRouteSelector mediaRouteSelector;
-    private String APP_ID = CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID;
+    private String APP_ID = "A9BC55DE";
     private CastDevice selectedDevice;
     private GoogleApiClient apiClient;
     private boolean applicationStarted;
